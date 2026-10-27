@@ -1,0 +1,53 @@
+name: Bambu filament sync
+
+# Initially manual-only. A daily schedule is added only after the read-only
+# probe, durable ledger handoff, and safe local-to-cloud cutover succeed.
+on:
+  workflow_dispatch:
+    inputs:
+      operation:
+        description: Run a read-only probe or synchronize the durable ledger
+        type: choice
+        required: true
+        default: probe
+        options:
+          - probe
+          - sync
+
+permissions:
+  contents: write
+
+concurrency:
+  group: bambu-filament-ledger
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      TZ: Asia/Shanghai
+      BAMBU_CLOUD_MODE: '1'
+      BAMBU_PERSIST: git
+      BAMBU_STATE_BRANCH: ${{ github.event.repository.default_branch }}
+      BAMBU_CLOUD_TOKEN: ${{ secrets.BAMBU_CLOUD_TOKEN }}
+      GH_STATE_TOKEN: ${{ github.token }}
+      OPERATION: ${{ inputs.operation }}
+    steps:
+      - name: Check out private repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: true
+      - name: Configure ledger commits
+        run: |
+          git config user.name 'filament-sync-bot'
+          git config user.email 'filament-sync-bot@users.noreply.github.com'
+      - name: Probe or synchronize
+        shell: bash
+        run: |
+          case "$OPERATION" in
+            probe) python3 sync.py preview ;;
+            sync) test -s ledger.sqlite3 && python3 sync.py sync ;;
+            *) echo 'Unsupported operation.'; exit 2 ;;
+          esac
