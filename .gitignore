@@ -1,0 +1,9 @@
+__pycache__/
+*.pyc
+.env
+*.secret
+config.json
+ledger*.sqlite3*
+sync.lock
+同步状态.md
+test_artifacts/

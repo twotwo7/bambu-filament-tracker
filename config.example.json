@@ -1,0 +1,13 @@
+{
+  "api_base": "https://api.bambulab.cn",
+  "manual_estimates": [],
+  "spools": [
+    {
+      "id": "REPLACE_WITH_NUMERIC_SPOOL_ID",
+      "label": "Example PLA spool",
+      "material": "PLA",
+      "initial_grams": 1000,
+      "historical_target_colors": []
+    }
+  ]
+}

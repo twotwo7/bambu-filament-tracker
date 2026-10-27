@@ -1,2 +1,47 @@
-# bambu-filament-tracker
-Estimate filament usage from Bambu Lab print history with safe, private cloud sync.
+# Bambu Filament Sync
+
+根据 Bambu Lab 云端打印历史，估算耗材使用量并更新耗材管理中的剩余净重。可作为本地脚本运行，也可使用 **GitHub 私有仓库 + Actions** 定时运行。
+
+本项目与 Bambu Lab 无官方关联，依赖其软件使用的云端接口；接口或返回数据可能变化。它只读取历史和耗材目录、更新选定的耗材重量，不发送、暂停或控制打印任务。
+
+## 工作方式与限制
+
+- 已完成任务按任务 ID 和材料明细去重。打印中的任务暂不扣减；失败或取消的任务默认等待人工核对。可以明确记录用户确认的取消任务估算比例，但该比例并非实际称重。
+- 新任务需要目标材料、颜色和当前 AMS 槽位与唯一料卷相匹配。云端历史没有可靠的物理料卷身份，因此同色换卷、外置料盘、缺少材料信息或槽位变化时需要人工核对；不能保证识别未登记的同色新卷。
+- 打印历史重量是切片估计，额外校准、启动排料及失败损耗可能未计算。实际剩余应使用称重校正。
+- 每次更新前核对云端重量，外部修改会暂停该料卷；更新采用绝对目标值和持久的待确认日志，超时恢复时先读回，避免重复扣减。拓竹云端接口未提供本程序可使用的原子比较并更新，仍存在并发修改窗口。
+
+## 安全与隐私
+
+- **公开代码仓库和私有运行仓库必须分开。** 运行仓库存放真实 `config.json`、打印任务和耗材账本，只能是私有仓库；项目默认忽略这些文件。不要把账号、设备编号、令牌、打印历史或账本提交到公开仓库。
+- 运行时从环境变量 `BAMBU_CLOUD_TOKEN` 读取令牌。使用 GitHub Actions 时应将其配置为仓库 **Actions Secret**，不要放进文件、工作流文本、日志或聊天。密钥由 GitHub 加密存储，运行时短暂存在于作业环境及进程内存中，并通过 HTTPS 发送给配置的拓竹域名；这不是端到端无法解密的运行环境。
+- 账号令牌可能拥有超出本工具所需的权限，应按密码保护；如果泄露或到期，请在账户侧撤销/更新并替换 Secret。能够修改私有仓库工作流的人也可能使用其 Secret。
+- 程序只允许 `https://api.bambulab.cn` 与 `https://api.bambulab.com`，不跟随 HTTP 重定向。Git 持久化模式在每次提交账本前确认 GitHub 仓库仍为私有；不要将包含历史账本的仓库改为公开。
+
+## 设置
+
+需要 Python 3.10+ 和 Git。程序使用 Python 标准库。选择与账号区域对应的拓竹域名，复制 `config.example.json` 为 `config.json`，填写真实料卷 ID、材料、初始剩余及需要追溯的历史颜色映射；示例 ID 是占位符，必须替换。
+
+在安全配置 `BAMBU_CLOUD_TOKEN` 后，可用 `python sync.py list-spools` 查看账号中的料卷 ID 和当前绑定信息；这会输出私人数据，不应分享日志。先用 `python sync.py preview` 查看拟扣减结果；仅确认基准后执行一次 `python sync.py initialize`。不要重复初始化或让不同实例使用独立账本同步同一账号。
+
+之后使用 `python sync.py sync`。如已在拓竹软件中称重校准，并明确要以当前云端重量作为新基准，可执行 `python sync.py accept-cloud --spool-id <ID>`；详细检查待核对任务和未确认操作后再做此操作。
+
+## GitHub Actions
+
+将代码复制到独立的**私有**运行仓库，安全配置 `BAMBU_CLOUD_TOKEN` Secret。可参考 [私有工作流示例](examples/private-workflow.yml)，先通过 `workflow_dispatch` 运行只读 `probe`；确认结果和基准后迁移最新账本，并先停用其他同步实例，再手动运行 `sync` 验证。确认成功后再添加每日计划。
+
+GitHub 工作流必须有私有仓库 `contents: write` 权限，以便每次拓竹写入前先推送待确认账本、写后推送确认状态。并发组和 Git 非快进拒绝能保护同一仓库中的作业，**无法**阻止另一个独立仓库或本机脚本并行运行。GitHub Actions 定时可能延迟或跳过；云服务、令牌有效期和账户额度也会影响运行。
+
+在私有运行仓库中，首次加入被忽略的真实 `config.json` 和 `ledger.sqlite3` 需要明确使用 `git add -f`；再次确认仓库是私有的。不要在公开仓库或 pull request 中执行这一步。
+
+## 测试
+
+```text
+python -m unittest -v test_cloud_checkpoint
+```
+
+测试使用虚构数据和本地临时 Git 仓库，不访问拓竹账户；覆盖重复扣减、取消估算、云端重量冲突、写入超时恢复、私有仓库校验和 Git 推送冲突。
+
+## 许可证
+
+[MIT](LICENSE)。Bambu Lab 和 Bambu Studio 均为各自权利人的商标。
